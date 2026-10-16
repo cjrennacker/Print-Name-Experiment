@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Print Title Search Task</title>
+<style>
+  :root { color-scheme: light; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: #ffffff; color: #000000;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  body { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  #app { width: 800px; height: 600px; position: relative; background: #fff; }
+  .center-item {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .text-block { max-width: 600px; width: 600px; line-height: 1.5; font-size: 17px; }
+  .text-block h2 { margin-top: 0; }
+  .text-block ul { text-align: left; }
+  .small { font-size: 13px; color: #666; }
+  button {
+    font-size: 16px; padding: 9px 22px; cursor: pointer; border: 1px solid #333;
+    background: #111; color: #fff; border-radius: 6px;
+  }
+  button:hover { background: #333; }
+  input[type="text"] { font-size: 16px; padding: 7px; border: 1px solid #999; border-radius: 4px; width: 220px; }
+  #progress {
+    position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; color: #999; font-family: monospace;
+  }
+  .fixdot { width: 12px; height: 12px; border-radius: 50%; background: #000; }
+  .cue-title { font-size: 40px; font-weight: 700; letter-spacing: 0.01em; }
+  .cue-sub { font-size: 14px; color: #777; margin-bottom: 14px; }
+  .resp { font-size: 22px; line-height: 1.7; }
+  .resp .keys { font-size: 18px; color: #333; }
+  .fb-ok { color: #1a7f37; font-size: 26px; font-weight: 600; }
+  .fb-bad { color: #b42318; font-size: 26px; font-weight: 600; }
+  .mask { display: block; width: 800px; height: 600px; }
+
+  /* ---- consent screen ---- */
+  .consent-wrap { width: 720px; }
+  .consent-wrap h2 { margin: 0 0 6px; font-size: 22px; }
+  .consent-box { text-align: left; height: 372px; overflow-y: auto; border: 1px solid #bbb; border-radius: 6px; padding: 8px 18px; font-size: 13.5px; line-height: 1.45; background: #fafafa; }
+  .consent-box h3 { font-size: 14px; margin: 12px 0 3px; }
+  .consent-box p { margin: 0 0 6px; }
+  .consent-box ul { margin: 0 0 6px; padding-left: 20px; }
+  .ph { background: #fff3a3; padding: 0 3px; border-radius: 3px; }
+  .warn { background: #fde8e8; color: #8a1c1c; border: 1px solid #e3a3a3; border-radius: 6px; font-size: 12px; padding: 4px 8px; margin-bottom: 6px; }
+  .btn-row { margin-top: 12px; display: flex; gap: 16px; justify-content: center; }
+  button.secondary { background: #fff; color: #111; }
+  button.secondary:hover { background: #eee; }
+
+  /* ---- gallery page stimulus (modeled on a three-column print grid) ---- */
+  .page { position: absolute; inset: 0; background: #fff; border: 1px solid #ddd; box-sizing: border-box; }
+  .hdr { height: 34px; background: #2f3a2c; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; }
+  .hdr .logo { width: 90px; height: 8px; background: #c9d1c4; border-radius: 2px; }
+  .hdr .nav { width: 150px; height: 6px; background: #8a9885; border-radius: 2px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 14px; padding: 10px 14px; }
+  .card { text-align: center; }
+  .photo { width: 100%; height: 118px; background-size: contain; background-repeat: no-repeat; background-position: center; background-color: #fff; display: block; }
+  .ttl { font-size: 15px; font-weight: 700; margin-top: 6px; color: #1c1c1c; line-height: 1.2; }
+  .loc { font-size: 11px; color: #777; margin-top: 2px; }
+  .price { font-size: 12px; color: #444; margin-top: 1px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="progress"></div>
+
+<script>
+/* =========================================================================
+   PRINT TITLE SEARCH TASK
+   Yes/no signal detection task. On each trial the participant reads a print
+   title, then sees one flashed screenful (3 x 3 grid) of a gallery page and
+   reports whether a card with that title was on it.
+
+   Manipulation: title similarity (low vs high) x signal (present vs absent),
+   all within subjects. Same photographs, only titles change.
+   ========================================================================= */
+
+const CONFIG = {
+  studyVersion: '1.1',
+
+  // ---- trial counts ----
+  practiceTrialsPerCell: 4,      // 4 cells -> 16 practice trials
+  experimentalBlocks: 4,
+  trialsPerCellPerBlock: 10,     // 4 cells x 10 = 40 trials per block -> 160 total
+
+  // ---- timing (ms) ----
+  cueMs: 1000,                   // target title on screen
+  fixationMs: 500,
+  displayMs: 700,                // T: how long the page is shown. Set from pilot data
+                                 // (aim for d' of about 1 to 2.5). Override with ?T=400
+  maskMs: 200,
+  responseTimeoutMs: 3000,
+  itiMs: 400,
+  practiceFeedbackMs: 700,
+
+  // ---- display ----
+  setSize: 9,                    // 3 x 3 cards, one screenful
+  familyDistractors: 5,          // in HIGH similarity, this many distractors share the target's first word
+  photoCount: 44,                // images/print_01.jpg ... print_44.jpg (square, white-matted)
+  photoExt: 'jpg',               // a missing file falls back to a gray-green placeholder.
+
+  // ---- data logging ----
+  // Paste your own Apps Script Web App URL here (ends in /exec). See SHEETS_SETUP.md.
+  // Leave blank to skip live logging and rely on the CSV download at the end.
+  sheetWebAppUrl: '',
+
+  showParticipantSummary: true,  // show d' and criterion on the final screen
+
+  // ---- IRB consent text ----
+  // Anything in [BRACKETS] is a placeholder. Fill each one from your approved ASU IRB
+  // protocol / consent form. While any bracket remains, a red warning shows on the consent screen.
+  consent: {
+    version: 'ASU-short-consent-template-v1',
+    researcherName: '[GRADUATE STUDENT NAME]',
+    advisorName: '[FACULTY ADVISOR / PI NAME]',
+    department: 'Human Systems Engineering',
+    school: 'Arizona State University',
+    duration: 'about 15 minutes',
+    compensation: '[COMPENSATION OR COURSE CREDIT, or write: There is no compensation for participating.]',
+    contactEmail: '[PI / RESEARCHER CONTACT EMAIL]',
+    irbPhone: '(480) 965-6788',
+    // Include the de-identified data sharing paragraph only if your protocol allows it.
+    includeDataSharing: true,
+  },
+};
+
+// URL overrides for piloting and testing, e.g. index.html?T=400  or  ?quick=1
+(function applyUrlOverrides() {
+  const q = new URLSearchParams(location.search);
+  if (q.get('T')) CONFIG.displayMs = Math.max(50, parseInt(q.get('T'), 10) || CONFIG.displayMs);
+  if (q.get('sheet')) CONFIG.sheetWebAppUrl = q.get('sheet');
+  if (q.get('quick') === '1') {
+    CONFIG.practiceTrialsPerCell = 1;
+    CONFIG.experimentalBlocks = 2;
+    CONFIG.trialsPerCellPerBlock = 2;
+    CONFIG.cueMs = 120; CONFIG.fixationMs = 60; CONFIG.maskMs = 60; CONFIG.itiMs = 30; CONFIG.practiceFeedbackMs = 60;
+    CONFIG.responseTimeoutMs = 1500;
+  }
+})();
+
+/* ---- Title pool ------------------------------------------------------------
+   TARGET FAMILIES. Ten families of six two- or three-word titles that share a first
+   word. Many are real Range & Focus titles (CATALOG_TITLES below). The rest are
+   invented siblings written in the same style, because the real catalog has too few
+   titles that share a first word to build the high-similarity pages. Each trial logs
+   target_source ('catalog' or 'invented') and n_invented_distractors so you can check
+   that this makes no difference.
+
+   High similarity: the 5 other titles in the target's family are on the page.
+   Low similarity: none of the 9 titles shares a word with the target. */
+const FAMILIES = {
+  Desert:  ['Garden', 'Coral', 'Jewel', 'Glow', 'Sun', 'Bloom'],
+  Emerald: ['Bay', 'Fantasy', 'and Amber', 'Pool', 'Shade', 'Cove'],
+  Aspen:   ['Garden', 'Glow', 'Gold', 'Lantern', 'Lace', 'Hush'],
+  Misty:   ['Blue', 'Ridge', 'Morning', 'Hollow', 'Pines', 'Veil'],
+  Island:  ['Fire', 'Sunset', 'Breeze', 'Tide', 'Dawn', 'Rhythm'],
+  Fern:    ['Forest', 'Glade', 'Shadow', 'Spiral', 'Dew', 'Crown'],
+  Rainbow: ['River', 'Garden', 'Prism', 'Mist', 'Arch', 'Trail'],
+  Coastal: ['Canvas', 'Dreams', 'Haze', 'Light', 'Mirror', 'Fog'],
+  Water:   ['Lilly', 'Spirit', 'Wheel Falls', 'Dance', 'Memory', 'Stone'],
+  Ancient: ['One', 'Roots', 'Light', 'Echo', 'Path', 'Dust'],
+};
+// Family titles that are real catalog titles (the rest are invented siblings).
+const REAL_FAMILY_TITLES = new Set([
+  'Desert Garden', 'Desert Coral', 'Desert Jewel', 'Emerald Bay', 'Emerald Fantasy', 'Emerald and Amber',
+  'Aspen Garden', 'Aspen Glow', 'Misty Blue', 'Misty Ridge', 'Island Fire', 'Island Sunset', 'Fern Forest',
+  'Rainbow River', 'Rainbow Garden', 'Coastal Canvas', 'Coastal Dreams', 'Water Lilly', 'Water Spirit',
+  'Water Wheel Falls', 'Ancient One', 'Ancient Roots']);
+
+// FILLER titles: real catalog titles, with place names removed so nobody can win by recognizing a landmark.
+const CATALOG_TITLES = ['Afterglow', 'Agave', 'Alliance', 'Alpine', 'Americana', 'Amethyst Hour', 'Arch Rock', 'Ascent',
+  'Bamboo Forest', 'Beachfront', 'Beyond', 'Big Sky', 'Birds of Paradise', 'Blue Dream', 'Blue Mesa', 'Blushing Desert',
+  'Botanical', 'Brittlebush', 'Broad', 'By The Sea', 'Canary Spring', 'Canopy', 'Canyon Whisper', 'Captive', 'Cascade',
+  'Cathedral', 'Cave Lake', 'Celestial', 'Cholla Garden', 'City of Angels', 'Colt', 'Confessions', 'Cotton Field',
+  'Countryside', 'Coyote', 'Cozy Cabin', 'Crescendo', 'Crisp Breeze', 'Crown Jewel', 'Daybreak', 'Deco Door',
+  'Desolate', 'Divine', 'Drift', 'Drifting Shadows', 'Eagle Falls', 'Echoes', 'Elder', 'Ember', 'Enchanted Pathway',
+  'Equilibrium', 'Erosion', 'Eternal', 'Eucalyptus Forest', 'Euphoria', 'Fall Reflections', 'Field of Dreams',
+  'Fiery Ti', 'Filly', 'Finback', 'Fir Needles', 'Fire and Ice', 'Flaming Sky', 'Fleur', 'Floating', 'Floral Frontier',
+  'Flower of Life', 'Footbridge', 'Forest Trance', 'Forgotten Passage', 'Gathering at Dawn', 'Gilded', 'Ginger',
+  'Goliath', 'Granite Ghost', 'Grasp', 'Grizzly', 'Guardian', 'Gypsum Dunes', 'Harmony', 'Harvest Sunset',
+  'Haybales and Hillsides', 'Heartland', 'Hibiscus', 'Hidden Lake', 'Homestead', 'Hoodoos', 'Inferno', 'Inferno Cone',
+  'Into The Jungle', 'Ironwood Dreams', 'July Sky', 'Jungle Walk', 'Kaleidoscope', 'Labyrinth', 'Last Surf',
+  'Lava Lake', 'Life', 'Livestock', 'Love is Calling', 'Lupine Ladybug', 'Lush', 'Majestic Mood', 'Modern Frontier',
+  'Moonscape', 'Musk Thistle', 'Mustang Meadows', 'Nocturnal', 'Northwest', 'Palette', 'Palm Pano', 'Palmarie',
+  'Papaya Paradiso', 'Passage of Time', 'Peacock', 'Perch', 'Perspective', 'Powerhouse', 'Pristine', 'Prosperity',
+  'Pua', 'Purgatorio', 'Purple Aster', 'Quiet Moment', 'Radiance', 'Razorback', 'Relic', 'Renaissance', 'Resonance',
+  'Retreat', 'Rhombus', 'Rift', 'Ruby Rush', 'Rush', 'Sageleaf', 'Saguaro Summer', 'Scarlet', 'Sci-Fi',
+  'Seaside Sunset', 'Serenade', 'Serenity', 'Silo', 'Snowbound', 'Sol', 'Solitude', 'Spirit of Freedom',
+  'Spiritual Falls', 'Splash', 'Spring', 'Steed', 'Summer Vibes', 'Sunflowers', 'Sunset Dreams', 'Superbloom',
+  'Symphony', 'Timberline', 'Torch Lilly Tree', 'Tranquil', 'Tranquil Morning', 'Tranquil Tidepools', 'Triassic',
+  'Tropical', 'Tropical Mirror', 'Two Seasons', 'Velvet Light', 'Voyage', 'Warm Glow', 'Watchful Ranger', 'Whisper',
+  'Whispering Aspens', 'Wild Spirit', 'Wind', 'Workhorse', 'Zen Forest', 'Zenith'];
+
+const TARGETS = [];   // {family, title, len, source}
+Object.keys(FAMILIES).forEach((f) => FAMILIES[f].forEach((sec) => {
+  const title = `${f} ${sec}`;
+  TARGETS.push({ family: f, title, len: title.length, source: REAL_FAMILY_TITLES.has(title) ? 'catalog' : 'invented' });
+}));
+// Fillers must not contain a family first word or duplicate a family title, so a filler can never look like a family member.
+const FAMILY_WORDS = new Set(Object.keys(FAMILIES).map((f) => f.toLowerCase()));
+const FILLERS = CATALOG_TITLES
+  .filter((t) => !t.toLowerCase().split(' ').some((w) => FAMILY_WORDS.has(w)) && !TARGETS.some((x) => x.title === t))
+  .map((t) => ({ family: 'filler', title: t, len: t.length, source: 'catalog' }));
+
+/* ---- state ---------------------------------------------------------------- */
+let sessionId = '';
+let trialCounter = 0;
+let keyMap = null;             // { present: 'z'|'m', absent: 'm'|'z' }
+const allData = [];
+let audioCtx = null;
+let keyResolver = null;
+let photoSlots = [];           // [{src|null}] per photo slot
+let maskUrls = [];
+
+const app = document.getElementById('app');
+const progressEl = document.getElementById('progress');
+function render(html) { app.innerHTML = html; }
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+function raf() { return new Promise((r) => requestAnimationFrame(r)); }
+function updateProgress(t) { progressEl.textContent = t; }
+
+/* ---- input ---------------------------------------------------------------- */
+document.addEventListener('keydown', (e) => {
+  if (!keyResolver) return;
+  const key = e.key.toLowerCase();
+  if (keyResolver.keys === '*' || keyResolver.keys.includes(key)) {
+    const rt = performance.now() - keyResolver.startTime;
+    const resolve = keyResolver.resolve;
+    keyResolver = null;
+    resolve({ key, rt, timedOut: false });
+  }
+});
+function waitForResponse(keys, timeoutMs) {
+  return new Promise((resolve) => {
+    const startTime = performance.now();
+    const timeoutId = setTimeout(() => {
+      if (keyResolver) { keyResolver = null; resolve({ key: null, rt: timeoutMs, timedOut: true }); }
+    }, timeoutMs);
+    keyResolver = { keys, startTime, resolve: (r) => { clearTimeout(timeoutId); resolve(r); } };
+  });
+}
+function waitForAnyKey() { return waitForResponse('*', 1e9).then(() => {}); }
+
+/* ---- logging to Google Sheets (fire and forget) ------------------------------
+   `no-cors` keeps the browser from blocking on a preflight, so logging never
+   adds latency to the trial loop. The local `allData` array and CSV are the
+   source of truth; the sheet is a live mirror. */
+function sendToSheet(row) {
+  if (!CONFIG.sheetWebAppUrl) return;
+  try {
+    fetch(CONFIG.sheetWebAppUrl, { method: 'POST', mode: 'no-cors', body: JSON.stringify(row) }).catch(() => {});
+  } catch (e) { /* CSV backup still has the data */ }
+}
+
+/* ---- audio ---------------------------------------------------------------- */
+function initAudio() {
+  if (!audioCtx) { const Ctx = window.AudioContext || window.webkitAudioContext; if (Ctx) audioCtx = new Ctx(); }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+/* ---- random helpers ----------------------------------------------------------- */
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+function sample(arr, n) { return shuffle(arr).slice(0, n); }
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/* ---- photos ------------------------------------------------------------------- */
+function pad2(n) { return String(n).padStart(2, '0'); }
+function photoSrc(i) { return `images/print_${pad2(i + 1)}.${CONFIG.photoExt}`; }
+
+function preloadPhotos() {
+  return Promise.all(Array.from({ length: CONFIG.photoCount }, (_, i) => new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => { photoSlots[i] = photoSrc(i); resolve(); };
+    img.onerror = () => { photoSlots[i] = null; resolve(); };
+    img.src = photoSrc(i);
+  })));
+}
+// Muted landscape-ish placeholder so the task runs before real photos are added.
+function placeholderStyle(i) {
+  const sky = 195 + ((i * 37) % 45);
+  const gnd = 25 + ((i * 53) % 120);
+  const split = 42 + ((i * 11) % 25);
+  const light = 30 + ((i * 7) % 18);
+  return `background:linear-gradient(to bottom, hsl(${sky} 28% 78%) 0 ${split}%, hsl(${gnd} 24% ${light}%) ${split}% 100%)`;
+}
+function photoHTML(i) {
+  const src = photoSlots[i];
+  return src
+    ? `<div class="photo" style="background-image:url('${src}')"></div>`
+    : `<div class="photo" style="${placeholderStyle(i)}"></div>`;
+}
+
+/* ---- masks ------------------------------------------------------------------ */
+function makeMask() {
+  const c = document.createElement('canvas'); c.width = 800; c.height = 600;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 800, 600);
+  for (let i = 0; i < 2600; i++) {
+    const x = Math.random() * 800, y = 36 + Math.random() * 564;
+    const w = 4 + Math.random() * 16, h = 3 + Math.random() * 9;
+    const v = Math.floor(30 + Math.random() * 190);
+    g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(x, y, w, h);
+  }
+  return c.toDataURL('image/png');
+}
+function maskHTML() { return `<img class="mask" src="${maskUrls[Math.floor(Math.random() * maskUrls.length)]}" alt="">`; }
+
+/* ---- stimulus construction ------------------------------------------------------ */
+function closestByLength(cands, targetLen, n) {
+  // random tie-break, then prefer titles whose length is closest to the target's
+  return shuffle(cands)
+    .map((t) => ({ t, d: Math.abs(t.len - targetLen) + Math.random() * 1.5 }))
+    .sort((a, b) => a.d - b.d).slice(0, n).map((x) => x.t);
+}
+function sharesWord(a, b) {
+  const A = a.split(' '), B = b.split(' ');
+  return A.some((w) => B.includes(w));
+}
+
+// Pick n fillers: no shared word with the target, all different first words, lengths close to the target's.
+function pickFillers(n, target) {
+  const pool = FILLERS.filter((t) => !sharesWord(t.title, target.title));
+  const ranked = shuffle(pool)
+    .map((t) => ({ t, d: Math.abs(t.len - target.len) + Math.random() * 3 }))
+    .sort((a, b) => a.d - b.d).map((x) => x.t);
+  const out = [], used = new Set();
+  for (const t of ranked) {
+    const fw = t.title.split(' ')[0].toLowerCase();
+    if (used.has(fw)) continue;
+    used.add(fw); out.push(t);
+    if (out.length === n) break;
+  }
+  return out;
+}
+
+// Returns { items: [{title, family, isTarget, photo}], targetPos|null, ... }
+function buildDisplay(target, similarity, signal) {
+  const nDist = signal === 'present' ? CONFIG.setSize - 1 : CONFIG.setSize;
+  let distractors;
+  if (similarity === 'high') {
+    const famCands = TARGETS.filter((t) => t.family === target.family && t.title !== target.title);
+    const fam = closestByLength(famCands, target.len, CONFIG.familyDistractors);
+    distractors = fam.concat(pickFillers(nDist - fam.length, target));
+  } else {
+    distractors = pickFillers(nDist, target);
+  }
+
+  let items = distractors.map((t) => ({ ...t, isTarget: false }));
+  if (signal === 'present') items.push({ ...target, isTarget: true });
+  items = shuffle(items);
+  const photoIds = sample([...Array(CONFIG.photoCount).keys()], CONFIG.setSize);
+  items.forEach((it, i) => { it.photo = photoIds[i]; });
+  const targetPos = items.findIndex((it) => it.isTarget);
+  const famShared = items.filter((it) => !it.isTarget && it.family === target.family).length;
+  const nInvented = items.filter((it) => !it.isTarget && it.source === 'invented').length;
+  const meanLenDiff = items.filter((it) => !it.isTarget).reduce((s, it) => s + Math.abs(it.len - target.len), 0) / nDist;
+  return { items, targetPos: targetPos >= 0 ? targetPos : null, famShared, nInvented, meanLenDiff };
+}
+
+function pageHTML(items) {
+  const cards = items.map((it) => `
+    <div class="card">
+      ${photoHTML(it.photo)}
+      <div class="ttl">${escapeHtml(it.title)}</div>
+      <div class="loc">Location, State</div>
+      <div class="price">from $110.00</div>
+    </div>`).join('');
+  return `<div class="page"><div class="hdr"><div class="logo"></div><div class="nav"></div></div><div class="grid">${cards}</div></div>`;
+}
+
+/* ---- design: balanced trial lists ------------------------------------------------- */
+let targetDeck = [];
+let lastTarget = null;
+function drawTarget() {
+  if (!targetDeck.length) targetDeck = shuffle(TARGETS);
+  let t = targetDeck.pop();
+  if (lastTarget && t.title === lastTarget && targetDeck.length) { const u = targetDeck.pop(); targetDeck.push(t); t = u; }
+  lastTarget = t.title;
+  return t;
+}
+function buildBlockTrials(perCell) {
+  const trials = [];
+  ['low', 'high'].forEach((similarity) => {
+    ['present', 'absent'].forEach((signal) => {
+      for (let i = 0; i < perCell; i++) trials.push({ similarity, signal, target: drawTarget() });
+    });
+  });
+  return shuffle(trials);
+}
+
+/* ---- timing-aware presentation --------------------------------------------------- */
+async function showFor(html, ms) {
+  render(html);
+  const t0 = await raf();
+  let t = t0;
+  while (t - t0 < ms - 8) t = await raf();
+  return Math.round(t - t0);
+}
+
+/* ---- trial ------------------------------------------------------------------------- */
+function responseHTML() {
+  const k = (kk) => kk.toUpperCase();
+  return `<div class="center-item resp">
+    <div>Was <strong>that title</strong> on the page?</div>
+    <div class="keys">Press <strong>${k(keyMap.present)}</strong> = Yes, it was there<br>Press <strong>${k(keyMap.absent)}</strong> = No, it was not</div>
+  </div>`;
+}
+
+async function runTrial(trial, meta) {
+  const disp = buildDisplay(trial.target, trial.similarity, trial.signal);
+
+  render(`<div class="center-item"><div class="cue-sub">Find this print</div><div class="cue-title">${escapeHtml(trial.target.title)}</div></div>`);
+  await sleep(CONFIG.cueMs);
+  render(`<div class="center-item"><div class="fixdot"></div></div>`);
+  await sleep(CONFIG.fixationMs);
+
+  const actualMs = await showFor(pageHTML(disp.items), CONFIG.displayMs);
+  render(maskHTML());
+  await sleep(CONFIG.maskMs);
+
+  render(responseHTML());
+  const result = await waitForResponse([keyMap.present, keyMap.absent], CONFIG.responseTimeoutMs);
+
+  let response = 'timeout', outcome = 'timeout', correct = 0;
+  if (!result.timedOut) {
+    response = result.key === keyMap.present ? 'present' : 'absent';
+    correct = response === trial.signal ? 1 : 0;
+    if (trial.signal === 'present') outcome = response === 'present' ? 'hit' : 'miss';
+    else outcome = response === 'present' ? 'false_alarm' : 'correct_rejection';
+  }
+
+  const row = {
+    record_type: 'trial',
+    study_version: CONFIG.studyVersion,
+    session_id: sessionId,
+    ...consentRecord,
+    trial_num: ++trialCounter,
+    phase: meta.phase,
+    block_num: meta.blockNum,
+    similarity: trial.similarity,
+    signal: trial.signal,
+    target_title: trial.target.title,
+    target_family: trial.target.family,
+    target_len: trial.target.len,
+    target_source: trial.target.source,
+    n_invented_distractors: disp.nInvented,
+    target_pos: disp.targetPos === null ? 'NA' : disp.targetPos,
+    n_first_word_matches: disp.famShared,
+    mean_len_diff: Math.round(disp.meanLenDiff * 100) / 100,
+    distractor_titles: disp.items.filter((it) => !it.isTarget).map((it) => it.title).join('|'),
+    photo_ids: disp.items.map((it) => it.photo + 1).join('|'),
+    key_mapping: keyMap.present === 'z' ? 'z_present' : 'm_present',
+    response,
+    outcome,
+    correct,
+    response_time_ms: result.timedOut ? 'NA' : Math.round(result.rt),
+    display_ms_set: CONFIG.displayMs,
+    display_ms_actual: actualMs,
+    screen_w: screen.width, screen_h: screen.height, dpr: window.devicePixelRatio,
+    timestamp: new Date().toISOString(),
+  };
+  allData.push(row);
+  sendToSheet(row);
+
+  if (meta.phase === 'practice') {
+    render(`<div class="center-item ${correct ? 'fb-ok' : 'fb-bad'}">${result.timedOut ? 'Too slow' : correct ? 'Correct' : 'Incorrect'}</div>`);
+    await sleep(CONFIG.practiceFeedbackMs);
+  }
+  render('');
+  await sleep(CONFIG.itiMs);
+}
+
+async function runBlock(trials, meta, label) {
+  for (let i = 0; i < trials.length; i++) {
+    updateProgress(`${label} - trial ${i + 1}/${trials.length}`);
+    await runTrial(trials[i], meta);
+  }
+}
+
+/* ---- SDT summary ------------------------------------------------------------------- */
+// Inverse standard normal CDF (Acklam's algorithm).
+function qnorm(p) {
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02, 1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01];
+  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+  const d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00];
+  const pl = 0.02425, ph = 1 - pl; let q, r;
+  if (p < pl) { q = Math.sqrt(-2 * Math.log(p)); return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  if (p > ph) { q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+  q = p - 0.5; r = q * q;
+  return (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1);
+}
+// Log-linear correction (Hautus, 1995): add 0.5 to counts, 1 to totals, so rates never hit 0 or 1.
+function sdt(hits, nSignal, fas, nNoise) {
+  const H = (hits + 0.5) / (nSignal + 1), FA = (fas + 0.5) / (nNoise + 1);
+  const zH = qnorm(H), zFA = qnorm(FA);
+  return { hit_rate: hits / nSignal, fa_rate: fas / nNoise, d_prime: zH - zFA, criterion_c: -(zH + zFA) / 2 };
+}
+function summarize(rows) {
+  const exp = rows.filter((r) => r.phase === 'experimental' && r.outcome !== 'timeout');
+  const out = {};
+  ['low', 'high', 'all'].forEach((sim) => {
+    const set = sim === 'all' ? exp : exp.filter((r) => r.similarity === sim);
+    const sig = set.filter((r) => r.signal === 'present'), noi = set.filter((r) => r.signal === 'absent');
+    const hits = sig.filter((r) => r.outcome === 'hit').length;
+    const fas = noi.filter((r) => r.outcome === 'false_alarm').length;
+    out[sim] = { n_signal: sig.length, n_noise: noi.length, hits, false_alarms: fas, ...(sig.length && noi.length ? sdt(hits, sig.length, fas, noi.length) : {}) };
+  });
+  return out;
+}
+function round(x, k = 3) { return typeof x === 'number' ? Math.round(x * 10 ** k) / 10 ** k : x; }
+function summaryRow() {
+  const s = summarize(allData);
+  const timeouts = allData.filter((r) => r.phase === 'experimental' && r.outcome === 'timeout').length;
+  const row = {
+    record_type: 'summary', study_version: CONFIG.studyVersion, session_id: sessionId, ...consentRecord,
+    key_mapping: keyMap.present === 'z' ? 'z_present' : 'm_present',
+    display_ms_set: CONFIG.displayMs, n_timeouts: timeouts, timestamp: new Date().toISOString(),
+  };
+  ['low', 'high', 'all'].forEach((sim) => {
+    Object.entries(s[sim]).forEach(([k, v]) => { row[`${sim}_${k}`] = round(v); });
+  });
+  return row;
+}
+
+/* ---- screens ------------------------------------------------------------------------- */
+let consentRecord = null;      // { consent, consent_version, consent_timestamp }
+
+function ph(v) { return /^\[/.test(v) ? `<span class="ph">${escapeHtml(v)}</span>` : escapeHtml(v); }
+function consentPlaceholdersLeft() {
+  return Object.values(CONFIG.consent).filter((v) => typeof v === 'string' && /^\[/.test(v)).length;
+}
+function consentHTML() {
+  const c = CONFIG.consent, left = consentPlaceholdersLeft();
+  const warn = left ? `<div class="warn">Setup note (remove before launch): ${left} highlighted placeholder${left > 1 ? 's' : ''} in CONFIG.consent still need your IRB details.</div>` : '';
+  const sharing = c.includeDataSharing ? `
+      <p>De-identified data from this study may be shared with the research community at large to advance science. We will remove or code any personal information that could identify you before files are shared with other researchers, so that, by current scientific standards and known methods, no one will be able to identify you from the information we share.</p>` : '';
+  return `
+    <div class="center-item consent-wrap">
+      <h2>Research Study Consent</h2>
+      ${warn}
+      <div class="consent-box" id="consent-box" tabindex="0">
+        <h3>Title of study</h3>
+        <p>Print Title Search: How title wording affects finding a print on a gallery page</p>
+        <h3>Who is running this study?</h3>
+        <p>I am a graduate student in ${ph(c.department)} at ${ph(c.school)}, working with ${ph(c.advisorName)}. I am conducting this research study as part of my graduate work. My name is ${ph(c.researcherName)}.</p>
+        <h3>Why am I being asked?</h3>
+        <p>You are invited to take part in a research study about how people find an item on a web page. You must be at least 18 years old to take part. Taking part is your choice.</p>
+        <h3>What will I be doing?</h3>
+        <p>You will do a computer task that takes ${ph(c.duration)}. On each trial you will read the title of a print, see a page of nine prints flash briefly, and press a key to say whether that title was on the page. There is a short practice (16 trials), then 160 trials in four blocks with breaks between them.</p>
+        <h3>What are the risks and benefits?</h3>
+        <p>There are no known risks beyond those of everyday computer use, such as mild eye or mental fatigue. You may take a break between blocks. There are no direct benefits to you. The results may help designers make online galleries and shops easier to search.</p>
+        <h3>Compensation</h3>
+        <p>${ph(c.compensation)}</p>
+        <h3>How will my information be protected?</h3>
+        <p>Your responses are anonymous. We record your key presses, response times, and screen size. We do not ask for your name or email address. If you type a participant ID, please do not use your name. Results will be reported as group summaries only. The task is not audio or video recorded.</p>${sharing}
+        <h3>Do I have to take part?</h3>
+        <p>No. Taking part is voluntary. You may skip any part of the task or stop at any time by closing this window, with no penalty. If you stop, the trials you already finished may stay in the data set, and because responses are anonymous they cannot be removed later.</p>
+        <h3>Who can I talk to about this study?</h3>
+        <p>If you have questions about the study, contact ${ph(c.advisorName)} or ${ph(c.researcherName)} at ${ph(c.contactEmail)}.</p>
+        <p>If you have questions about your rights as a participant, or you feel you have been placed at risk, you can contact the Chair of the Human Subjects Institutional Review Board through the ASU Office of Research Integrity and Assurance at ${ph(c.irbPhone)}.</p>
+        <h3>Your consent</h3>
+        <p>Clicking <strong>"I consent"</strong> below means you are 18 or older, you have read this information, and you agree to be part of the study. Clicking <strong>"I do not consent"</strong> will end the session and no data will be collected.</p>
+        <p>You can print or save this page for your records.</p>
+      </div>
+      <div class="btn-row">
+        <button id="consent-yes">I consent</button>
+        <button id="consent-no" class="secondary">I do not consent</button>
+      </div>
+    </div>`;
+}
+function declinedHTML() {
+  return `
+    <div class="center-item text-block">
+      <h2>Thank you</h2>
+      <p>You chose not to take part, and that is completely fine. No data were collected. You can close this window.</p>
+    </div>`;
+}
+function getConsent() {
+  return new Promise((resolve) => {
+    render(consentHTML());
+    document.getElementById('consent-yes').addEventListener('click', () => {
+      initAudio();
+      consentRecord = { consent: 'yes', consent_version: CONFIG.consent.version, consent_timestamp: new Date().toISOString() };
+      resolve(true);
+    });
+    document.getElementById('consent-no').addEventListener('click', () => resolve(false));
+  });
+}
+
+function getSessionId() {
+  return new Promise((resolve) => {
+    render(`
+      <div class="center-item text-block">
+        <h2>Print Title Search</h2>
+        <p>Thank you for agreeing to take part.</p>
+        <p>Enter a participant ID, or leave it blank for an auto-generated one. Please do not use your name.</p>
+        <input type="text" id="pid-input" autofocus>
+        <br><br>
+        <button id="start-btn">Continue</button>
+        <p class="small">Use a laptop or desktop computer with a keyboard.</p>
+      </div>`);
+    document.getElementById('start-btn').addEventListener('click', () => {
+      const val = document.getElementById('pid-input').value.trim();
+      resolve(val || ('P' + Date.now()));
+    });
+  });
+}
+function instructionsHTML() {
+  return `
+    <div class="center-item text-block">
+      <h2>Instructions</h2>
+      <p>Imagine you are looking for a particular print on an online gallery. On each trial you will see the <strong>title</strong> of a print, such as <em>Desert Coral</em>.</p>
+      <p>Next, a page of nine prints will flash on screen very briefly, then be covered by a pattern. Decide whether a print with the title you were given was on the page.</p>
+      <ul>
+        <li>Press <strong>${keyMap.present.toUpperCase()}</strong> if it <strong>was</strong> on the page.</li>
+        <li>Press <strong>${keyMap.absent.toUpperCase()}</strong> if it <strong>was not</strong>.</li>
+      </ul>
+      <p>The title is on the page on half of the trials. Look at the center of the screen, read quickly, and answer as accurately as you can. Guess if you are not sure.</p>
+      <p>You will get feedback during a short practice, but not afterward.</p>
+      <p>Press any key to begin practice.</p>
+    </div>`;
+}
+function endOfPracticeHTML(acc) {
+  return `
+    <div class="center-item text-block">
+      <h2>Practice complete</h2>
+      <p>Practice accuracy: ${acc}%.</p>
+      <p>The real trials come next, with no feedback. Remember:</p>
+      <ul>
+        <li><strong>${keyMap.present.toUpperCase()}</strong> = the title was on the page</li>
+        <li><strong>${keyMap.absent.toUpperCase()}</strong> = it was not</li>
+      </ul>
+      <p>Press any key to begin.</p>
+    </div>`;
+}
+function breakHTML(done, total) {
+  return `
+    <div class="center-item text-block">
+      <h2>Take a short break</h2>
+      <p>You have finished ${done} of ${total} blocks.</p>
+      <p>Press any key when you are ready to continue.</p>
+    </div>`;
+}
+function experimentCompleteHTML() {
+  return `
+    <div class="center-item text-block">
+      <h2>All trials complete</h2>
+      <p>Thank you for participating!</p>
+      <p>Press any key to finish.</p>
+    </div>`;
+}
+function toCSV(rows) {
+  if (!rows.length) return '';
+  const headers = Array.from(rows.reduce((s, r) => { Object.keys(r).forEach((k) => s.add(k)); return s; }, new Set()));
+  const lines = [headers.join(',')];
+  rows.forEach((r) => lines.push(headers.map((h) => `"${String(r[h] ?? '').replace(/"/g, '""')}"`).join(',')));
+  return lines.join('\n');
+}
+function endOfExperimentHTML() {
+  const blob = new Blob([toCSV(allData)], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const s = summarize(allData);
+  const fmt = (x) => (typeof x === 'number' ? x.toFixed(2) : 'n/a');
+  const sum = CONFIG.showParticipantSummary ? `
+    <p class="small">Your results: sensitivity (d') was ${fmt(s.low.d_prime)} with unlike titles and ${fmt(s.high.d_prime)} with look-alike titles.
+    Your criterion (c) was ${fmt(s.low.criterion_c)} and ${fmt(s.high.criterion_c)}. Lower c means more willingness to say "yes".</p>` : '';
+  const syncNote = CONFIG.sheetWebAppUrl
+    ? `<p class="small">Your trials were also sent to the study's Google Sheet as you went. The download below is your personal backup copy.</p>` : '';
+  return `
+    <div class="center-item text-block">
+      <h2>All done, thank you!</h2>
+      <p>${allData.length} trials logged for session <strong>${escapeHtml(sessionId)}</strong>.</p>
+      ${sum}${syncNote}
+      <a href="${url}" download="print_title_search_${escapeHtml(sessionId)}.csv"><button>Download your data (CSV)</button></a>
+    </div>`;
+}
+
+/* ---- main ---------------------------------------------------------------------------- */
+async function main() {
+  const ready = Promise.all([preloadPhotos(), new Promise((r) => { maskUrls = Array.from({ length: 6 }, makeMask); r(); })]);
+  if (!CONFIG.sheetWebAppUrl) updateProgress('sheet logging OFF (CSV download only)');
+
+  const agreed = await getConsent();
+  if (!agreed) { updateProgress(''); render(declinedHTML()); return; }
+  sessionId = await getSessionId();
+  // Counterbalance which key means "present" across participants so key bias cannot masquerade as criterion.
+  keyMap = Math.random() < 0.5 ? { present: 'z', absent: 'm' } : { present: 'm', absent: 'z' };
+
+  render(instructionsHTML());
+  await waitForAnyKey();
+  await ready;
+
+  await runBlock(buildBlockTrials(CONFIG.practiceTrialsPerCell), { phase: 'practice', blockNum: 1 }, 'practice');
+  const prac = allData.filter((r) => r.phase === 'practice');
+  const acc = prac.length ? Math.round(100 * prac.filter((r) => r.correct === 1).length / prac.length) : 0;
+  render(endOfPracticeHTML(acc));
+  await waitForAnyKey();
+
+  for (let b = 1; b <= CONFIG.experimentalBlocks; b++) {
+    await runBlock(buildBlockTrials(CONFIG.trialsPerCellPerBlock), { phase: 'experimental', blockNum: b }, `block ${b}/${CONFIG.experimentalBlocks}`);
+    if (b < CONFIG.experimentalBlocks) { render(breakHTML(b, CONFIG.experimentalBlocks)); await waitForAnyKey(); }
+  }
+
+  updateProgress('');
+  sendToSheet(summaryRow());
+  render(experimentCompleteHTML());
+  await waitForAnyKey();
+  render(endOfExperimentHTML());
+}
+
+main();
+</script>
+</body>
+</html>
